@@ -1,5 +1,4 @@
-#nsml: nsml/default_ml:tf-1.4.1
-
+#nsml: nsml/default_ml:cuda9_torch1.0
 from distutils.core import setup
 
 setup(
@@ -7,7 +6,7 @@ setup(
     version='1',
     description='NER_NSML_Baseline',
     install_requires=[
-        'tensorflow-gpu==1.4.1',
-        'numpy>=1.11.0'
+        'tensorflow_hub',
+        'datetime'
     ]
 )

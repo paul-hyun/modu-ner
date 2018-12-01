@@ -137,6 +137,78 @@ class Dataset:
         self.labels = np.array(labels)
         print('make_input_data:', self.morphs.shape, self.characters.shape)
 
+    def make_input_str(self, extern_data=None, padding=""):
+        morphs = []
+        ne_dicts = []
+        characters = []
+        labels = []
+        sequence_lengths = []
+        character_lengths = []
+
+        if extern_data is not None:
+            self.extern_data = extern_data
+
+        temp = [[], [], []]
+        # TAG 정보가 없는 경우에는 tag 자리에 mor 정보가 들어온다
+        for mor, tag, _, ner_mor, ner_tag in self._read_data_file(pre=False, extern_data=self.extern_data):
+            if tag != False:
+                temp[0] += mor
+                temp[1] += tag
+                if len(ner_tag) == 0:
+                    temp[2] += ['O'] * len(mor)
+                elif len(ner_tag) == len(mor):
+                    temp[2] = ner_tag
+                else:
+                    for i, m in enumerate(mor):
+                        if m == ner_mor[0]:
+                            break
+                    ner_tag = ['O'] * i + ner_tag
+                    ner_tag = ner_tag + ['O'] * (len(mor) - len(ner_tag))
+                    temp[2] += ner_tag
+            else:
+                morph = [padding] * self.parameter["sentence_length"]
+                ne_dict = [[0.] * int(self.parameter["n_class"] / 2)] * self.parameter["sentence_length"]
+                character = [[padding] * self.parameter["word_length"]] * self.parameter["sentence_length"]
+                character_length = [0] * self.parameter["sentence_length"]
+                label = [0] * self.parameter["sentence_length"]
+
+                if len(temp[0]) > self.parameter["sentence_length"]:
+                    temp = [[], [], []]
+                    continue
+
+                sequence_lengths.append(len(temp[0]))
+                for mor, tag, neTag, index in zip(temp[0], temp[1], temp[2], range(0, len(temp[0]))):
+                    # morph[index] = self._search_index_by_dict(self.necessary_data["word"], mor)
+                    morph[index] = mor
+                    ne_dict[index] = self._search_index_by_dict(self.necessary_data["ner_morph_tag"], mor)
+                    if neTag != "-" and neTag != "-_B":
+                        label[index] = self._search_index_by_dict(self.necessary_data["ner_tag"], neTag)
+                    sub_char = [padding] * self.parameter["word_length"]
+                    for i, char in enumerate(mor):
+                        if i == self.parameter["word_length"]: 
+                            i-=1
+                            break
+                        # sub_char[i] = self._search_index_by_dict(self.necessary_data["character"], char)
+                        sub_char[i] = char
+                    character_length[index] = i+1
+                    character[index] = sub_char
+
+                morphs.append(morph)
+                ne_dicts.append(ne_dict)
+                characters.append(character)
+                character_lengths.append(character_length)
+                labels.append(label)
+
+                temp = [[], [], []]
+
+        self.morphs = np.array(morphs)
+        self.ne_dicts = np.array(ne_dicts)
+        self.characters = np.array(characters)
+        self.sequence_lengths = np.array(sequence_lengths)
+        self.character_lengths = np.array(character_lengths)
+        self.labels = np.array(labels)
+        print('make_input_str:', self.morphs.shape, self.characters.shape)
+
     def get_data_batch_size(self, n, train=True):
         if train:
             for i, step in enumerate(range(0, self.parameter["train_lines"], n)):

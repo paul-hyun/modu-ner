@@ -13,6 +13,11 @@ from evaluation import get_ner_bi_tag_list_in_sentence
 from evaluation import diff_model_label
 from evaluation import calculation_measure
 
+hub_url = None
+hub_url = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1"
+word_embedding_size = 50
+char_embedding_size = 50
+
 
 def iteration_model(model, dataset, parameter, train=True):
     precision_count = np.array([ 0. , 0. ])
@@ -78,7 +83,10 @@ def bind_model(sess):
 
         # 학습용 데이터셋 구성
         dataset.parameter["train_lines"] = len(input)
-        dataset.make_input_data(input)
+        if hub_url == None:
+            dataset.make_input_data(input)
+        else:
+            dataset.make_input_str(input)
         reverse_tag = {v: k for k, v in dataset.necessary_data["ner_tag"].items()}
 
         # 테스트 셋을 측정한다.
@@ -125,8 +133,8 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 
-    parser.add_argument("--word_embedding_size", type=int, default=16, required=False, help='Word, WordPos Embedding Size') 
-    parser.add_argument("--char_embedding_size", type=int, default=16, required=False, help='Char Embedding Size') 
+    parser.add_argument("--word_embedding_size", type=int, default=word_embedding_size, required=False, help='Word, WordPos Embedding Size') 
+    parser.add_argument("--char_embedding_size", type=int, default=char_embedding_size, required=False, help='Char Embedding Size') 
     parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size') 
 
     parser.add_argument('--lstm_units', type=int, default=16, required=False, help='Hidden unit size')
@@ -154,12 +162,13 @@ if __name__ == '__main__':
 
 
     # Model 불러오기
-    model = Model(dataset.parameter)
+    model = Model(dataset.parameter, hub_url)
     model.build_model()
 
     # tensorflow session 생성 및 초기화
     sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
+    # hub 를 사용하기 위해서 tables_initializer 도 해 주어야 함
+    sess.run([tf.global_variables_initializer(), tf.tables_initializer()])
 
     # DO NOT CHANGE
     bind_model(sess)
@@ -172,9 +181,15 @@ if __name__ == '__main__':
     if parameter["mode"] == "train":
         extern_data = data_loader(DATASET_PATH)
         dataset.parameter["train_lines"] = len(extern_data)
-        dataset.make_input_data(extern_data[:train_lines])
+        if hub_url == None:
+            dataset.make_input_data(extern_data[:train_lines])
+        else:
+            dataset.make_input_str(extern_data[:train_lines])
         evalset.parameter["train_lines"] = len(extern_data)
-        evalset.make_input_data(extern_data[train_lines:train_lines+test_lines])
+        if hub_url == None:
+            evalset.make_input_data(extern_data[train_lines:train_lines+test_lines])
+        else:
+            evalset.make_input_str(extern_data[train_lines:train_lines+test_lines])
         for epoch in range(parameter["epochs"]):
             avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter)
             print('[Epoch: {:>4}] cost = {:>.6} Accuracy = {:>.6}'.format(epoch + 1, avg_cost, avg_correct))
@@ -183,6 +198,7 @@ if __name__ == '__main__':
             nsml.report(summary=True, scope=locals(), train__loss=avg_cost, step=epoch)
             nsml.save(epoch)
 
-            avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter, train=False)
-            f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
-            print('>>> Evaluate F1Measure : {:.6f} Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
+            if 0 < test_lines:
+                avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter, train=False)
+                f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
+                print('>>> Evaluate F1Measure : {:.6f} Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))

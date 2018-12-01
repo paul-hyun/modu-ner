@@ -1,12 +1,21 @@
 # -*- coding: utf-8 -*-
 
+import os
 import tensorflow as tf
+import tensorflow_hub as hub
 
 class Model:
-    def __init__(self, parameter):
+    def __init__(self, parameter, hub_url=None):
         self.parameter = parameter
+        self.hub_url = hub_url
 
     def build_model(self):
+        if self.hub_url == None:
+            pass
+        else:
+            os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
+            embed = hub.Module(self.hub_url, trainable=True)
+
         self._build_placeholder()
 
         # { "morph": 0, "morph_tag": 1, "tag" : 2, "character": 3, .. }
@@ -16,8 +25,18 @@ class Model:
 
         # 각각의 임베딩 값을 가져온다
         self._embeddings = []
-        self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph))
-        self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[1], self.character))
+        if self.hub_url == None:
+            self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph))
+            self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[1], self.character))
+        else:
+            shape = tf.shape(self.morph)
+            morph = embed(tf.reshape(self.morph, [-1]))
+            morph = tf.reshape(morph, [shape[0], shape[1], self.parameter["word_embedding_size"]])
+            self._embeddings.append(morph)
+            shape = tf.shape(self.character)
+            character = embed(tf.reshape(self.character, [-1]))
+            character = tf.reshape(character, [shape[0], shape[1], shape[2], self.parameter["char_embedding_size"]])
+            self._embeddings.append(character)
 
         # 음절을 이용한 임베딩 값을 구한다.
         character_embedding = tf.reshape(self._embeddings[1], [-1, self.parameter["word_length"], self.parameter["embedding"][1][2]])
@@ -42,9 +61,15 @@ class Model:
         self.cost = crf_cost
 
     def _build_placeholder(self):
-        self.morph = tf.placeholder(tf.int32, [None, None])
+        if self.hub_url == None:
+            self.morph = tf.placeholder(tf.int32, [None, None])
+        else:
+            self.morph = tf.placeholder(tf.string, [None, None])
         self.ne_dict = tf.placeholder(tf.float32, [None, None, int(self.parameter["n_class"] / 2)])
-        self.character = tf.placeholder(tf.int32, [None, None, None])
+        if self.hub_url == None:
+            self.character = tf.placeholder(tf.int32, [None, None, None])
+        else:
+            self.character = tf.placeholder(tf.string, [None, None, None])
         self.dropout_rate = tf.placeholder(tf.float32)
         self.sequence = tf.placeholder(tf.int32, [None])
         self.character_len = tf.placeholder(tf.int32, [None, None])
