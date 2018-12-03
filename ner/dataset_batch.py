@@ -137,7 +137,7 @@ class Dataset:
         self.labels = np.array(labels)
         print('make_input_data:', self.morphs.shape, self.characters.shape)
 
-    def make_input_str(self, extern_data=None, padding=""):
+    def make_input_str(self, extern_data=None, padding="__PAD__"):
         morphs = []
         ne_dicts = []
         characters = []

@@ -5,17 +5,11 @@ import tensorflow as tf
 import tensorflow_hub as hub
 
 class Model:
-    def __init__(self, parameter, hub_url=None):
+    def __init__(self, parameter, embed=None):
         self.parameter = parameter
-        self.hub_url = hub_url
+        self.embed = embed
 
     def build_model(self):
-        if self.hub_url == None:
-            pass
-        else:
-            os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
-            embed = hub.Module(self.hub_url, trainable=True)
-
         self._build_placeholder()
 
         # { "morph": 0, "morph_tag": 1, "tag" : 2, "character": 3, .. }
@@ -25,16 +19,16 @@ class Model:
 
         # 각각의 임베딩 값을 가져온다
         self._embeddings = []
-        if self.hub_url == None:
+        if self.embed == None:
             self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph))
             self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[1], self.character))
         else:
             shape = tf.shape(self.morph)
-            morph = embed(tf.reshape(self.morph, [-1]))
+            morph = self.embed(tf.reshape(self.morph, [-1]))
             morph = tf.reshape(morph, [shape[0], shape[1], self.parameter["word_embedding_size"]])
             self._embeddings.append(morph)
             shape = tf.shape(self.character)
-            character = embed(tf.reshape(self.character, [-1]))
+            character = self.embed(tf.reshape(self.character, [-1]))
             character = tf.reshape(character, [shape[0], shape[1], shape[2], self.parameter["char_embedding_size"]])
             self._embeddings.append(character)
 
@@ -61,12 +55,12 @@ class Model:
         self.cost = crf_cost
 
     def _build_placeholder(self):
-        if self.hub_url == None:
+        if self.embed == None:
             self.morph = tf.placeholder(tf.int32, [None, None])
         else:
             self.morph = tf.placeholder(tf.string, [None, None])
         self.ne_dict = tf.placeholder(tf.float32, [None, None, int(self.parameter["n_class"] / 2)])
-        if self.hub_url == None:
+        if self.embed == None:
             self.character = tf.placeholder(tf.int32, [None, None, None])
         else:
             self.character = tf.placeholder(tf.string, [None, None, None])

@@ -12,12 +12,15 @@ from data_loader import data_loader
 from evaluation import get_ner_bi_tag_list_in_sentence
 from evaluation import diff_model_label
 from evaluation import calculation_measure
+import tensorflow_hub as hub
 
-hub_url = None
-hub_url = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1"
-word_embedding_size = 50
-char_embedding_size = 50
-
+os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
+# embed, word_embedding_size, char_embedding_size = None, 16, 16
+embed, word_embedding_size, char_embedding_size = hub.Module("https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", trainable=True), 50, 50
+train_lines = 10000
+test_lines = 10000
+epochs = 10
+batch_size = train_lines // 10
 
 def iteration_model(model, dataset, parameter, train=True):
     precision_count = np.array([ 0. , 0. ])
@@ -83,7 +86,7 @@ def bind_model(sess):
 
         # 학습용 데이터셋 구성
         dataset.parameter["train_lines"] = len(input)
-        if hub_url == None:
+        if embed == None:
             dataset.make_input_data(input)
         else:
             dataset.make_input_str(input)
@@ -128,8 +131,8 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=20, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=100, required=False, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=epochs, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=batch_size, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 
@@ -162,7 +165,7 @@ if __name__ == '__main__':
 
 
     # Model 불러오기
-    model = Model(dataset.parameter, hub_url)
+    model = Model(dataset.parameter, embed)
     model.build_model()
 
     # tensorflow session 생성 및 초기화
@@ -175,18 +178,16 @@ if __name__ == '__main__':
     if parameter["pause"] == 1:
         nsml.paused(scope=locals())
 
-    train_lines = 1000
-    test_lines = 1000
     # 학습
     if parameter["mode"] == "train":
         extern_data = data_loader(DATASET_PATH)
         dataset.parameter["train_lines"] = len(extern_data)
-        if hub_url == None:
+        if embed == None:
             dataset.make_input_data(extern_data[:train_lines])
         else:
             dataset.make_input_str(extern_data[:train_lines])
         evalset.parameter["train_lines"] = len(extern_data)
-        if hub_url == None:
+        if embed == None:
             evalset.make_input_data(extern_data[train_lines:train_lines+test_lines])
         else:
             evalset.make_input_str(extern_data[train_lines:train_lines+test_lines])
@@ -199,6 +200,6 @@ if __name__ == '__main__':
             nsml.save(epoch)
 
             if 0 < test_lines:
-                avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter, train=False)
+                avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, evalset, parameter, train=False)
                 f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
                 print('>>> Evaluate F1Measure : {:.6f} Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
