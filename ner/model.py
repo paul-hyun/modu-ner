@@ -15,7 +15,10 @@ class Model:
         # { "morph": 0, "morph_tag": 1, "tag" : 2, "character": 3, .. }
         self._embedding_matrix = []
         for item in self.parameter["embedding"]:
-            self._embedding_matrix.append(self._build_embedding(item[1], item[2], name="embedding_" + item[0]))
+            if self.embed == None:
+                self._embedding_matrix.append(self._build_embedding(item[1], item[2], name="embedding_" + item[0]))
+            else:
+                self._embedding_matrix.append(tf.zeros([0, 0], dtype=tf.float32))
 
         # 각각의 임베딩 값을 가져온다
         self._embeddings = []

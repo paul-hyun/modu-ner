@@ -15,12 +15,21 @@ from evaluation import calculation_measure
 import tensorflow_hub as hub
 
 os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
-# embed, word_embedding_size, char_embedding_size = None, 16, 16
-embed, word_embedding_size, char_embedding_size = hub.Module("https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", trainable=True), 50, 50
-train_lines = 10000
-test_lines = 10000
-epochs = 10
-batch_size = train_lines // 10
+# hub_url, word_embedding_size, char_embedding_size = None, 16, 16
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", 50, 50
+hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50/1", 50, 50
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128-with-normalization/1", 128, 128
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128/1", 128, 128
+print("embed: ", hub_url)
+if hub_url != None:
+    embed = hub.Module(hub_url, trainable=True)
+else:
+    embed = None
+
+train_lines = 81000
+test_lines = 9000
+epochs = 20
+batch_size = min(1000, train_lines // 10)
 
 def iteration_model(model, dataset, parameter, train=True):
     precision_count = np.array([ 0. , 0. ])
@@ -140,8 +149,8 @@ if __name__ == '__main__':
     parser.add_argument("--char_embedding_size", type=int, default=char_embedding_size, required=False, help='Char Embedding Size') 
     parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size') 
 
-    parser.add_argument('--lstm_units', type=int, default=16, required=False, help='Hidden unit size')
-    parser.add_argument('--char_lstm_units', type=int, default=32, required=False, help='Hidden unit size for Char rnn')
+    parser.add_argument('--lstm_units', type=int, default=min(64, word_embedding_size), required=False, help='Hidden unit size')
+    parser.add_argument('--char_lstm_units', type=int, default=min(64, char_embedding_size * 2), required=False, help='Hidden unit size for Char rnn')
     parser.add_argument('--sentence_length', type=int, default=180, required=False, help='Maximum words in sentence')
     parser.add_argument('--word_length', type=int, default=8, required=False, help='Maximum chars in word')
 
