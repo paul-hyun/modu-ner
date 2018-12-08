@@ -1,4 +1,5 @@
 ner/__pycache__
 ner/.vscode
+ner.base
 *.swp
 nsml

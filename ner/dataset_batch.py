@@ -138,6 +138,7 @@ class Dataset:
         print('make_input_data:', self.morphs.shape, self.characters.shape)
 
     def make_input_str(self, extern_data=None, padding="__PAD__"):
+        use_char_embed = self.parameter['use_char_embed']
         morphs = []
         ne_dicts = []
         characters = []
@@ -168,7 +169,10 @@ class Dataset:
             else:
                 morph = [padding] * self.parameter["sentence_length"]
                 ne_dict = [[0.] * int(self.parameter["n_class"] / 2)] * self.parameter["sentence_length"]
-                character = [[padding] * self.parameter["word_length"]] * self.parameter["sentence_length"]
+                if use_char_embed:
+                    character = [[padding] * self.parameter["word_length"]] * self.parameter["sentence_length"]
+                else:
+                    character = [[0] * self.parameter["word_length"]] * self.parameter["sentence_length"]
                 character_length = [0] * self.parameter["sentence_length"]
                 label = [0] * self.parameter["sentence_length"]
 
@@ -183,13 +187,18 @@ class Dataset:
                     ne_dict[index] = self._search_index_by_dict(self.necessary_data["ner_morph_tag"], mor)
                     if neTag != "-" and neTag != "-_B":
                         label[index] = self._search_index_by_dict(self.necessary_data["ner_tag"], neTag)
-                    sub_char = [padding] * self.parameter["word_length"]
+                    if use_char_embed:
+                        sub_char = [padding] * self.parameter["word_length"]
+                    else:
+                        sub_char = [0] * self.parameter["word_length"]
                     for i, char in enumerate(mor):
                         if i == self.parameter["word_length"]: 
                             i-=1
                             break
-                        # sub_char[i] = self._search_index_by_dict(self.necessary_data["character"], char)
-                        sub_char[i] = char
+                        if use_char_embed:
+                            sub_char[i] = char
+                        else:
+                            sub_char[i] = self._search_index_by_dict(self.necessary_data["character"], char)
                     character_length[index] = i+1
                     character[index] = sub_char
 

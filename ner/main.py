@@ -18,18 +18,22 @@ os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
 # hub_url, word_embedding_size, char_embedding_size = None, 16, 16
 # hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", 50, 50
 hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50/1", 50, 50
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128-with-normalization/1", 128, 128
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128/1", 128, 128
-print("embed: ", hub_url)
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128-with-normalization/1", 128, 16
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128/1", 128, 16
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/elmo/2", 1024, 16
+use_char_embed = True
+print("embed: ", hub_url, use_char_embed)
 if hub_url != None:
     embed = hub.Module(hub_url, trainable=True)
 else:
     embed = None
 
-train_lines = 81000
-test_lines = 9000
-epochs = 20
-batch_size = min(1000, train_lines // 10)
+sentence_length = 160
+train_lines = 10
+test_lines = 10
+epochs = 1
+batch_size = min(500, train_lines // 10)
+keep_prob = 0.5
 
 def iteration_model(model, dataset, parameter, train=True):
     precision_count = np.array([ 0. , 0. ])
@@ -47,7 +51,7 @@ def iteration_model(model, dataset, parameter, train=True):
                       model.sequence : seq_len,
                       model.character_len : char_len,
                       model.label : label,
-                      model.dropout_rate : parameter["keep_prob"]
+                      model.dropout_rate : parameter["keep_prob"] if train else 1.0
                     }
 
         if train:
@@ -143,15 +147,16 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=epochs, required=False, help='Epoch value')
     parser.add_argument('--batch_size', type=int, default=batch_size, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
-    parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
+    parser.add_argument('--keep_prob', type=float, default=keep_prob, required=False, help='Dropout_rate')
 
     parser.add_argument("--word_embedding_size", type=int, default=word_embedding_size, required=False, help='Word, WordPos Embedding Size') 
     parser.add_argument("--char_embedding_size", type=int, default=char_embedding_size, required=False, help='Char Embedding Size') 
-    parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size') 
+    parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size')
+    parser.add_argument("--use_char_embed", type=bool, default=use_char_embed, required=False, help='Char Embedding Falg') 
 
-    parser.add_argument('--lstm_units', type=int, default=min(64, word_embedding_size), required=False, help='Hidden unit size')
-    parser.add_argument('--char_lstm_units', type=int, default=min(64, char_embedding_size * 2), required=False, help='Hidden unit size for Char rnn')
-    parser.add_argument('--sentence_length', type=int, default=180, required=False, help='Maximum words in sentence')
+    parser.add_argument('--lstm_units', type=int, default=50, required=False, help='Hidden unit size')
+    parser.add_argument('--char_lstm_units', type=int, default=100, required=False, help='Hidden unit size for Char rnn')
+    parser.add_argument('--sentence_length', type=int, default=sentence_length, required=False, help='Maximum words in sentence')
     parser.add_argument('--word_length', type=int, default=8, required=False, help='Maximum chars in word')
 
     try:
@@ -159,6 +164,8 @@ if __name__ == '__main__':
     except:
         parser.print_help()
         sys.exit(0)
+
+    print(parameter)
 
     # data_loader를 이용해서 전체 데이터셋 가져옴
     if nsml.HAS_DATASET:
@@ -211,4 +218,6 @@ if __name__ == '__main__':
             if 0 < test_lines:
                 avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, evalset, parameter, train=False)
                 f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
-                print('>>> Evaluate F1Measure : {:.6f} Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
+                print('>>>')
+                print('>>> F1Measure : [{:.6f}] Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
+                print('>>>')
