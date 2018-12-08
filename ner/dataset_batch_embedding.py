@@ -67,7 +67,7 @@ class Dataset:
         with open(self.parameter["necessary_file"], 'wb') as f:
             pickle.dump(necessary_data, f)
 
-    def make_input_data(self, extern_data=None):
+    def make_input_data(self, extern_data=None, padding='PAD'):
         morphs = []
         ne_dicts = []
         characters = []
@@ -96,9 +96,9 @@ class Dataset:
                     ner_tag = ner_tag + ['O'] * (len(mor) - len(ner_tag))
                     temp[2] += ner_tag
             else:
-                morph = [0] * self.parameter["sentence_length"]
+                morph = [padding] * self.parameter["sentence_length"]
                 ne_dict = [[0.] * int(self.parameter["n_class"] / 2)] * self.parameter["sentence_length"]
-                character = [[0] * self.parameter["word_length"]] * self.parameter["sentence_length"]
+                character = [[padding] * self.parameter["word_length"]] * self.parameter["sentence_length"]
                 character_length = [0] * self.parameter["sentence_length"]
                 label = [0] * self.parameter["sentence_length"]
 
@@ -108,16 +108,16 @@ class Dataset:
 
                 sequence_lengths.append(len(temp[0]))
                 for mor, tag, neTag, index in zip(temp[0], temp[1], temp[2], range(0, len(temp[0]))):
-                    morph[index] = self._search_index_by_dict(self.necessary_data["word"], mor)
+                    morph[index] = mor
                     ne_dict[index] = self._search_index_by_dict(self.necessary_data["ner_morph_tag"], mor)
                     if neTag != "-" and neTag != "-_B":
                         label[index] = self._search_index_by_dict(self.necessary_data["ner_tag"], neTag)
-                    sub_char = [0] * self.parameter["word_length"]
+                    sub_char = [padding] * self.parameter["word_length"]
                     for i, char in enumerate(mor):
                         if i == self.parameter["word_length"]: 
                             i-=1
                             break
-                        sub_char[i] = self._search_index_by_dict(self.necessary_data["character"], char)
+                        sub_char[i] = char
                     character_length[index] = i+1
                     character[index] = sub_char
 

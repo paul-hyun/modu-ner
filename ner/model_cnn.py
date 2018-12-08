@@ -10,45 +10,57 @@ class Model:
         self._build_placeholder()
 
         # { "morph": 0, "morph_tag": 1, "tag" : 2, "character": 3, .. }
-        self._embedding_matrix = [] # shape word: (331273, 16), shape char: (2176, 16)
+        self._embedding_matrix = []
         for item in self.parameter["embedding"]:
             self._embedding_matrix.append(self._build_embedding(item[1], item[2], name="embedding_" + item[0]))
 
         # 각각의 임베딩 값을 가져온다
         self._embeddings = []
-        self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph)) # shape (batch, 180, 16)
-        self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[1], self.character)) # shape (batch, 180, 8, 16)
+        embedding_morph = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph)
+        # CNN
+        for _ in range(0, 3):
+            embedding_morph = tf.nn.conv1d(embedding_morph, tf.zeros([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]), stride=1, padding="SAME")
+            embedding_morph = tf.layers.batch_normalization(embedding_morph, training=tf.less(self.dropout_rate, 1.0))
+            embedding_morph = tf.nn.relu(embedding_morph)
+        self._embeddings.append(embedding_morph)
+        embedding_character = tf.nn.embedding_lookup(self._embedding_matrix[1], self.character)
+        # CNN: cost가 NaN이 되면서 오동작 함 !!!
+        # embedding_character = tf.reshape(embedding_character, [-1, 8, 16])
+        # embedding_character = tf.nn.conv1d(embedding_character, tf.zeros([3, 16, 16]), stride=1, padding="SAME")
+        # embedding_character = tf.nn.relu(embedding_character)
+        # embedding_character = tf.reshape(embedding_character, [-1, 180, 8, 16])
+        self._embeddings.append(embedding_character)
 
         # 음절을 이용한 임베딩 값을 구한다.
-        character_embedding = tf.reshape(self._embeddings[1], [-1, self.parameter["word_length"], self.parameter["embedding"][1][2]]) # shape (batch x 180, 8, 16)
-        char_len = tf.reshape(self.character_len, [-1]) # shape (batch x 180,)
+        character_embedding = tf.reshape(self._embeddings[1], [-1, self.parameter["word_length"], self.parameter["embedding"][1][2]])
+        char_len = tf.reshape(self.character_len, [-1])
 
-        character_emb_rnn, _, _ = self._build_birnn_model(character_embedding, char_len, self.parameter["char_lstm_units"], self.dropout_rate, last=True, scope="char_layer") # shape (batch, 180, 64)
+        character_emb_rnn, _, _ = self._build_birnn_model(character_embedding, char_len, self.parameter["char_lstm_units"], self.dropout_rate, last=True, scope="char_layer")
 
         # 위에서 구한 모든 임베딩 값을 concat 한다.
-        all_data_emb = self.ne_dict # shape (batch, 180, 15)
+        all_data_emb = self.ne_dict
         for i in range(0, len(self._embeddings)-1):
-            all_data_emb = tf.concat([all_data_emb, self._embeddings[i]], axis=2) # shape (batch, 180, 15 + 16)
-        all_data_emb = tf.concat([all_data_emb, character_emb_rnn], axis=2) # shape (batch, 180, 95)
+            all_data_emb = tf.concat([all_data_emb, self._embeddings[i]], axis=2)
+        all_data_emb = tf.concat([all_data_emb, character_emb_rnn], axis=2)
 
         # 모든 데이터를 가져와서 Bi-RNN 실시
-        sentence_output, W, B = self._build_birnn_model(all_data_emb, self.sequence, self.parameter["lstm_units"], self.dropout_rate, scope="all_data_layer") # shape (batch x 180, 32), (32, 30), (30,)
-        sentence_output = tf.matmul(sentence_output, W) + B # shape (batch x 180, 30)
+        sentence_output, W, B = self._build_birnn_model(all_data_emb, self.sequence, self.parameter["lstm_units"], self.dropout_rate, scope="all_data_layer")
+        sentence_output = tf.matmul(sentence_output, W) + B
 
         # 마지막으로 CRF 를 실시 한다
-        crf_cost, crf_weight, crf_bias = self._build_crf_layer(sentence_output) # shape (), (30, 30), (30,)
+        crf_cost, crf_weight, crf_bias = self._build_crf_layer(sentence_output)
 
         self.train_op = self._build_output_layer(crf_cost)
-        self.cost = crf_cost # shape ()
+        self.cost = crf_cost
 
     def _build_placeholder(self):
-        self.morph = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
-        self.ne_dict = tf.placeholder(tf.float32, [None, None, int(self.parameter["n_class"] / 2)]) # shape (batch, 180, 15)
-        self.character = tf.placeholder(tf.int32, [None, None, None]) # shape (batch, 180, 8)
+        self.morph = tf.placeholder(tf.int32, [None, None])
+        self.ne_dict = tf.placeholder(tf.float32, [None, None, int(self.parameter["n_class"] / 2)])
+        self.character = tf.placeholder(tf.int32, [None, None, None])
         self.dropout_rate = tf.placeholder(tf.float32)
-        self.sequence = tf.placeholder(tf.int32, [None]) # shape (batch,)
-        self.character_len = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
-        self.label = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
+        self.sequence = tf.placeholder(tf.int32, [None])
+        self.character_len = tf.placeholder(tf.int32, [None, None])
+        self.label = tf.placeholder(tf.int32, [None, None])
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
 
     def _build_embedding(self, n_tokens, dimention, name="embedding"):

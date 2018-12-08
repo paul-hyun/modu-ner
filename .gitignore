@@ -1,5 +1,8 @@
 ner/__pycache__
 ner/.vscode
-ner.base
+ner.embedding
+ner.cnn
+ner.attension
+srl
 *.swp
 nsml

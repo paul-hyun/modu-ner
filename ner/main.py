@@ -6,34 +6,17 @@ import argparse
 import os
 import nsml
 from nsml import DATASET_PATH
-from model import Model
 from dataset_batch import Dataset
+# from dataset_batch_embedding import Dataset
+# from model import Model
+# from model_embedding import Model
+from model_cnn import Model
+# from model_attention import Model
 from data_loader import data_loader
 from evaluation import get_ner_bi_tag_list_in_sentence
 from evaluation import diff_model_label
 from evaluation import calculation_measure
-import tensorflow_hub as hub
 
-os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
-# hub_url, word_embedding_size, char_embedding_size = None, 16, 16
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", 50, 50
-hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50/1", 50, 50
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128-with-normalization/1", 128, 16
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128/1", 128, 16
-# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/elmo/2", 1024, 16
-use_char_embed = True
-print("embed: ", hub_url, use_char_embed)
-if hub_url != None:
-    embed = hub.Module(hub_url, trainable=True)
-else:
-    embed = None
-
-sentence_length = 160
-train_lines = 10
-test_lines = 10
-epochs = 1
-batch_size = min(500, train_lines // 10)
-keep_prob = 0.5
 
 def iteration_model(model, dataset, parameter, train=True):
     precision_count = np.array([ 0. , 0. ])
@@ -43,7 +26,6 @@ def iteration_model(model, dataset, parameter, train=True):
     avg_cost = 0.0
     avg_correct = 0.0
     total_labels = 0.0
-    size = 0
     for morph, ne_dict, character, seq_len, char_len, label, step in dataset.get_data_batch_size(parameter["batch_size"], train):
         feed_dict = { model.morph : morph,
                       model.ne_dict : ne_dict,
@@ -99,10 +81,7 @@ def bind_model(sess):
 
         # 학습용 데이터셋 구성
         dataset.parameter["train_lines"] = len(input)
-        if embed == None:
-            dataset.make_input_data(input)
-        else:
-            dataset.make_input_str(input)
+        dataset.make_input_data(input)
         reverse_tag = {v: k for k, v in dataset.necessary_data["ner_tag"].items()}
 
         # 테스트 셋을 측정한다.
@@ -144,19 +123,18 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=epochs, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=batch_size, required=False, help='Batch size')
-    parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
-    parser.add_argument('--keep_prob', type=float, default=keep_prob, required=False, help='Dropout_rate')
+    parser.add_argument('--epochs', type=int, default=100 if nsml.HAS_DATASET else 1, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.05, required=False, help='Set learning rate')
+    parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 
-    parser.add_argument("--word_embedding_size", type=int, default=word_embedding_size, required=False, help='Word, WordPos Embedding Size') 
-    parser.add_argument("--char_embedding_size", type=int, default=char_embedding_size, required=False, help='Char Embedding Size') 
-    parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size')
-    parser.add_argument("--use_char_embed", type=bool, default=use_char_embed, required=False, help='Char Embedding Falg') 
+    parser.add_argument("--word_embedding_size", type=int, default=16, required=False, help='Word, WordPos Embedding Size') 
+    parser.add_argument("--char_embedding_size", type=int, default=16, required=False, help='Char Embedding Size') 
+    parser.add_argument("--tag_embedding_size", type=int, default=16, required=False, help='Tag Embedding Size') 
 
-    parser.add_argument('--lstm_units', type=int, default=50, required=False, help='Hidden unit size')
-    parser.add_argument('--char_lstm_units', type=int, default=100, required=False, help='Hidden unit size for Char rnn')
-    parser.add_argument('--sentence_length', type=int, default=sentence_length, required=False, help='Maximum words in sentence')
+    parser.add_argument('--lstm_units', type=int, default=16, required=False, help='Hidden unit size')
+    parser.add_argument('--char_lstm_units', type=int, default=32, required=False, help='Hidden unit size for Char rnn')
+    parser.add_argument('--sentence_length', type=int, default=180, required=False, help='Maximum words in sentence')
     parser.add_argument('--word_length', type=int, default=8, required=False, help='Maximum chars in word')
 
     try:
@@ -166,7 +144,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
     print(parameter)
-
+    
     # data_loader를 이용해서 전체 데이터셋 가져옴
     if nsml.HAS_DATASET:
         DATASET_PATH = nsml.DATASET_PATH
@@ -177,16 +155,14 @@ if __name__ == '__main__':
 
     # 가져온 문장별 데이터셋을 이용해서 각종 정보 및 학습셋 구성
     dataset = Dataset(parameter, extern_data)
-    evalset = Dataset(parameter, extern_data)
 
 
     # Model 불러오기
-    model = Model(dataset.parameter, embed)
+    model = Model(dataset.parameter)
     model.build_model()
 
     # tensorflow session 생성 및 초기화
     sess = tf.Session()
-    # hub 를 사용하기 위해서 tables_initializer 도 해 주어야 함
     sess.run([tf.global_variables_initializer(), tf.tables_initializer()])
 
     # DO NOT CHANGE
@@ -197,16 +173,11 @@ if __name__ == '__main__':
     # 학습
     if parameter["mode"] == "train":
         extern_data = data_loader(DATASET_PATH)
-        dataset.parameter["train_lines"] = len(extern_data)
-        if embed == None:
-            dataset.make_input_data(extern_data[:train_lines])
+        if nsml.HAS_DATASET:
+            dataset.parameter["train_lines"] = len(extern_data)
         else:
-            dataset.make_input_str(extern_data[:train_lines])
-        evalset.parameter["train_lines"] = len(extern_data)
-        if embed == None:
-            evalset.make_input_data(extern_data[train_lines:train_lines+test_lines])
-        else:
-            evalset.make_input_str(extern_data[train_lines:train_lines+test_lines])
+            dataset.parameter["train_lines"] = 10
+        dataset.make_input_data(extern_data)
         for epoch in range(parameter["epochs"]):
             avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter)
             print('[Epoch: {:>4}] cost = {:>.6} Accuracy = {:>.6}'.format(epoch + 1, avg_cost, avg_correct))
@@ -214,10 +185,3 @@ if __name__ == '__main__':
             print('[Train] F1Measure : {:.6f} Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
             nsml.report(summary=True, scope=locals(), train__loss=avg_cost, step=epoch)
             nsml.save(epoch)
-
-            if 0 < test_lines:
-                avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, evalset, parameter, train=False)
-                f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
-                print('>>>')
-                print('>>> F1Measure : [{:.6f}] Precision : {:.6f} Recall : {:.6f}'.format(f1Measure, precision, recall))
-                print('>>>')
