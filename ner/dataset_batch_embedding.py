@@ -135,6 +135,7 @@ class Dataset:
         self.sequence_lengths = np.array(sequence_lengths)
         self.character_lengths = np.array(character_lengths)
         self.labels = np.array(labels)
+        print("morphs:", self.morphs.shape, "characters:", self.characters.shape)
 
     def get_data_batch_size(self, n, train=True):
         if train:

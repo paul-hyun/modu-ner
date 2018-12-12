@@ -118,8 +118,8 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=100 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=500 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 

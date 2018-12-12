@@ -85,6 +85,7 @@ class Model:
             if last:
                 _, ((_, output_fw), (_, output_bw)) = _output
                 outputs = tf.concat([output_fw, output_bw], axis=1)
+                # outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, self.parameter["sentence_length"], 2 * lstm_units])
             else:
                 (output_fw, output_bw), _ = _output

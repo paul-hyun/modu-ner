@@ -64,6 +64,7 @@ class Dataset:
         # 존재하는 형태소 별 NER 품사 태그 비율 사전
         necessary_data["ner_morph_tag"] = self._necessary_data_sorting_and_reverse_dict(necessary_data["ner_morph_tag"], start=0, ner=True)
 
+        print(necessary_data)
         with open(self.parameter["necessary_file"], 'wb') as f:
             pickle.dump(necessary_data, f)
 
@@ -135,6 +136,7 @@ class Dataset:
         self.sequence_lengths = np.array(sequence_lengths)
         self.character_lengths = np.array(character_lengths)
         self.labels = np.array(labels)
+        print("morphs:", self.morphs.shape, "characters:", self.characters.shape)
 
     def get_data_batch_size(self, n, train=True):
         if train:

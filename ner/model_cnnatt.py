@@ -5,6 +5,8 @@ import tensorflow as tf
 class Model:
     def __init__(self, parameter):
         self.parameter = parameter
+        self.num_heads = 4
+        self.num_units = 2 * self.parameter["lstm_units"] # 32 # 280
 
     def build_model(self):
         self._build_placeholder()
@@ -65,6 +67,7 @@ class Model:
         self.character_len = tf.placeholder(tf.int32, [None, None])
         self.label = tf.placeholder(tf.int32, [None, None])
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
+        self.learning_rate = tf.Variable(0.02, trainable=False, name='learning_rate')
 
     def _build_embedding(self, n_tokens, dimention, name="embedding"):
         embedding_weights = tf.get_variable(
@@ -98,10 +101,13 @@ class Model:
             if last:
                 _, ((_, output_fw), (_, output_bw)) = _output
                 outputs = tf.concat([output_fw, output_bw], axis=1)
+                # 동작안함
+                # outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, self.parameter["sentence_length"], 2 * lstm_units])
             else:
                 (output_fw, output_bw), _ = _output
                 outputs = tf.concat([output_fw, output_bw], axis=2)
+                outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, 2 * lstm_units])
 
             W, b = self._build_weight([2 * self.parameter["lstm_units"], self.parameter["n_class"]], scope="output" + scope)
@@ -123,8 +129,48 @@ class Model:
 
     def _build_output_layer(self, cost):
         with tf.variable_scope("output_layer"):
-            train_op = tf.train.AdamOptimizer(self.parameter["learning_rate"]).minimize(cost, global_step=self.global_step)
+            train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(cost, global_step=self.global_step)
         return train_op
+    
+    def normalize(self,inputs, epsilon = 1e-8,scope="ln",reuse=None):
+        with tf.variable_scope(scope, reuse=reuse):
+            inputs_shape = inputs.get_shape()
+            params_shape = inputs_shape[-1:]
+            mean, variance = tf.nn.moments(inputs, [-1], keep_dims=True)
+            beta = tf.Variable(tf.zeros(params_shape),dtype=tf.float32)
+            gamma = tf.Variable(tf.ones(params_shape),dtype=tf.float32)
+            normalized = (inputs - mean) / ((variance + epsilon) ** (0.5))
+            outputs = gamma * normalized + beta
+
+        return outputs
+
+    def self_attention(self, keys, scope='multihead_attention', reuse=None):
+        with tf.variable_scope(scope, reuse=reuse):
+            Q = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            K = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            V = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            Q_ = tf.concat(tf.split(Q, self.num_heads, axis=2), axis=0)
+            K_ = tf.concat(tf.split(K, self.num_heads, axis=2), axis=0)
+            V_ = tf.concat(tf.split(V, self.num_heads, axis=2), axis=0)
+            outputs = tf.matmul(Q_, tf.transpose(K_, [0, 2, 1]))
+            outputs = outputs / (K_.get_shape().as_list()[-1] ** 0.5)
+            key_masks = tf.sign(tf.abs(tf.reduce_sum(keys, axis=-1)))
+            key_masks = tf.tile(key_masks, [self.num_heads, 1])
+            key_masks = tf.tile(tf.expand_dims(key_masks, 1), [1, tf.shape(keys)[1], 1])
+            paddings = tf.ones_like(outputs) * (-2 ** 32 + 1)
+            outputs = tf.where(tf.equal(key_masks, 0), paddings, outputs)
+            outputs = tf.nn.softmax(outputs)
+            query_masks = tf.sign(tf.abs(tf.reduce_sum(keys, axis=-1)))
+            query_masks = tf.tile(query_masks, [self.num_heads, 1])
+            query_masks = tf.tile(tf.expand_dims(query_masks, -1), [1, 1, tf.shape(keys)[1]])
+            outputs *= query_masks
+            if self.parameter["mode"] == "train":
+                outputs = tf.nn.dropout(outputs, keep_prob=self.dropout_rate)
+            outputs = tf.matmul(outputs, V_)
+            outputs = tf.concat(tf.split(outputs, self.num_heads, axis=0), axis=2)
+            outputs += keys
+            outputs = self.normalize(outputs)
+        return outputs
 
 
 if __name__ == "__main__":

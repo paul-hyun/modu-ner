@@ -6,8 +6,14 @@ import argparse
 import os
 import nsml
 from nsml import DATASET_PATH
-from dataset_batch import Dataset
-from model_transformer import Model
+# from dataset_batch import Dataset
+from dataset_batch_embedding import Dataset
+# from model import Model
+# from model_embedding import Model
+# from model_cnn import Model
+# from model_attention import Model
+from model_complex import Model
+# from model_cnnatt import Model
 from data_loader import data_loader
 from evaluation import get_ner_bi_tag_list_in_sentence
 from evaluation import diff_model_label
@@ -31,19 +37,20 @@ def iteration_model(model, dataset, parameter, train=True):
                       model.dropout_rate : parameter["keep_prob"] if train else 1.0,
                       model.learning_rate : parameter["learning_rate"]
                     }
-        
+
         if train:
-            cost, predict, _ = sess.run([model.cost, model.predict, model.train_op], feed_dict=feed_dict)
+            cost, tf_viterbi_sequence, _ = sess.run([model.cost, model.viterbi_sequence, model.train_op], feed_dict=feed_dict)
         else:
-            cost, predict = sess.run([model.cost, model.predict], feed_dict=feed_dict)
+            cost, tf_viterbi_sequence = sess.run([model.cost, model.viterbi_sequence], feed_dict=feed_dict)
         avg_cost += cost
 
-        mask = (np.expand_dims(np.arange(parameter["sentence_length"]), axis=0) <  np.expand_dims(seq_len, axis=1))
+        mask = (np.expand_dims(np.arange(parameter["sentence_length"]), axis=0) <
+                            np.expand_dims(seq_len, axis=1))
         total_labels += np.sum(seq_len)
 
-        correct_labels = np.sum((label == predict) * mask)
+        correct_labels = np.sum((label == tf_viterbi_sequence) * mask)
         avg_correct += correct_labels
-        precision_count, recall_count = diff_model_label(dataset, precision_count, recall_count, predict, label, seq_len)
+        precision_count, recall_count = diff_model_label(dataset, precision_count, recall_count, tf_viterbi_sequence, label, seq_len)
         if train and step % 100 == 0:
             print('[Train step: {:>4}] cost = {:>.9} Accuracy = {:>.6}'.format(step + 1, avg_cost / (step+1), 100.0 * avg_correct / float(total_labels)))
         else:
@@ -118,8 +125,8 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=100 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=500 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 

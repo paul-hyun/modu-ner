@@ -1,31 +1,51 @@
 # -*- coding: utf-8 -*-
+"""
+embedding + cnn + self_attention
+"""
 
+import os
 import tensorflow as tf
+import tensorflow_hub as hub
+
+
+os.environ["TFHUB_CACHE_DIR"] = '/tmp/THUB'
+hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50-with-normalization/1", 50, 50
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim50/1", 50, 50
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128-with-normalization/1", 128, 128
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/nnlm-ko-dim128/1", 128, 128
+# hub_url, word_embedding_size, char_embedding_size = "https://tfhub.dev/google/elmo/2", 1024, 16
+
+print("embed: ", hub_url)
+embed = hub.Module(hub_url, trainable=True)
+
 
 class Model:
     def __init__(self, parameter):
         self.parameter = parameter
+        self.parameter['word_embedding_size'] = word_embedding_size
+        self.parameter['char_embedding_size'] = char_embedding_size
+        self.num_heads = 4
+        self.num_units = 2 * self.parameter["lstm_units"] # 32 # 280
 
     def build_model(self):
         self._build_placeholder()
 
-        # { "morph": 0, "morph_tag": 1, "tag" : 2, "character": 3, .. }
-        self._embedding_matrix = []
-        for item in self.parameter["embedding"]:
-            self._embedding_matrix.append(self._build_embedding(item[1], item[2], name="embedding_" + item[0]))
-
         # 각각의 임베딩 값을 가져온다
         self._embeddings = []
-        embedding_morph = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph)
+        shape = tf.shape(self.morph)
+        embedding_morph = embed(tf.reshape(self.morph, [-1]))
+        embedding_morph = tf.reshape(embedding_morph, [shape[0], shape[1], self.parameter["word_embedding_size"]])
         # CNN
-        for _ in range(0, 3):
-            embedding_morph = tf.nn.conv1d(embedding_morph, tf.zeros([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]), stride=1, padding="SAME")
-            # embedding_morph = tf.layers.conv1d(embedding_morph, self.parameter['word_embedding_size'], 3, padding='SAME', kernel_initializer=tf.contrib.layers.xavier_initializer())
-            # embedding_morph = tf.layers.batch_normalization(embedding_morph, training=tf.less(self.dropout_rate, 1.0))
-            embedding_morph = tf.nn.relu(embedding_morph)
+        # for _ in range(0, 3):
+        #     embedding_morph = tf.nn.conv1d(embedding_morph, tf.zeros([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]), stride=1, padding="SAME")
+        #     # embedding_morph = tf.layers.conv1d(embedding_morph, self.parameter['word_embedding_size'], 3, padding='SAME', kernel_initializer=tf.contrib.layers.xavier_initializer())
+        #     # embedding_morph = tf.layers.batch_normalization(embedding_morph, training=tf.less(self.dropout_rate, 1.0))
+        #     embedding_morph = tf.nn.relu(embedding_morph)
         self._embeddings.append(embedding_morph)
 
-        embedding_character = tf.nn.embedding_lookup(self._embedding_matrix[1], self.character)
+        shape = tf.shape(self.character)
+        embedding_character = embed(tf.reshape(self.character, [-1]))
+        embedding_character = tf.reshape(embedding_character, [shape[0], shape[1], shape[2], self.parameter["char_embedding_size"]])
         # CNN
         # for _ in range(0, 3):
         #     embedding_character = tf.nn.conv2d(embedding_character, tf.zeros([3, 3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]), strides=(1, 1, 1, 1), padding="SAME")
@@ -35,7 +55,7 @@ class Model:
         self._embeddings.append(embedding_character)
 
         # 음절을 이용한 임베딩 값을 구한다.
-        character_embedding = tf.reshape(self._embeddings[1], [-1, self.parameter["word_length"], self.parameter["embedding"][1][2]])
+        character_embedding = tf.reshape(self._embeddings[1], [-1, self.parameter["word_length"], self.parameter["char_embedding_size"]])
         char_len = tf.reshape(self.character_len, [-1])
 
         character_emb_rnn, _, _ = self._build_birnn_model(character_embedding, char_len, self.parameter["char_lstm_units"], self.dropout_rate, last=True, scope="char_layer")
@@ -57,14 +77,15 @@ class Model:
         self.cost = crf_cost
 
     def _build_placeholder(self):
-        self.morph = tf.placeholder(tf.int32, [None, None])
+        self.morph = tf.placeholder(tf.string, [None, None])
         self.ne_dict = tf.placeholder(tf.float32, [None, None, int(self.parameter["n_class"] / 2)])
-        self.character = tf.placeholder(tf.int32, [None, None, None])
+        self.character = tf.placeholder(tf.string, [None, None, None])
         self.dropout_rate = tf.placeholder(tf.float32)
         self.sequence = tf.placeholder(tf.int32, [None])
         self.character_len = tf.placeholder(tf.int32, [None, None])
         self.label = tf.placeholder(tf.int32, [None, None])
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
+        self.learning_rate = tf.Variable(0.02, trainable=False, name='learning_rate')
 
     def _build_embedding(self, n_tokens, dimention, name="embedding"):
         embedding_weights = tf.get_variable(
@@ -98,10 +119,13 @@ class Model:
             if last:
                 _, ((_, output_fw), (_, output_bw)) = _output
                 outputs = tf.concat([output_fw, output_bw], axis=1)
+                # 동작안함
+                # outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, self.parameter["sentence_length"], 2 * lstm_units])
             else:
                 (output_fw, output_bw), _ = _output
                 outputs = tf.concat([output_fw, output_bw], axis=2)
+                outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, 2 * lstm_units])
 
             W, b = self._build_weight([2 * self.parameter["lstm_units"], self.parameter["n_class"]], scope="output" + scope)
@@ -123,8 +147,48 @@ class Model:
 
     def _build_output_layer(self, cost):
         with tf.variable_scope("output_layer"):
-            train_op = tf.train.AdamOptimizer(self.parameter["learning_rate"]).minimize(cost, global_step=self.global_step)
+            train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(cost, global_step=self.global_step)
         return train_op
+
+    def normalize(self,inputs, epsilon = 1e-8,scope="ln",reuse=None):
+        with tf.variable_scope(scope, reuse=reuse):
+            inputs_shape = inputs.get_shape()
+            params_shape = inputs_shape[-1:]
+            mean, variance = tf.nn.moments(inputs, [-1], keep_dims=True)
+            beta = tf.Variable(tf.zeros(params_shape),dtype=tf.float32)
+            gamma = tf.Variable(tf.ones(params_shape),dtype=tf.float32)
+            normalized = (inputs - mean) / ((variance + epsilon) ** (0.5))
+            outputs = gamma * normalized + beta
+
+        return outputs
+
+    def self_attention(self, keys, scope='multihead_attention', reuse=None):
+        with tf.variable_scope(scope, reuse=reuse):
+            Q = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            K = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            V = tf.nn.relu(tf.layers.dense(keys, self.num_units, kernel_initializer=tf.contrib.layers.xavier_initializer()))
+            Q_ = tf.concat(tf.split(Q, self.num_heads, axis=2), axis=0)
+            K_ = tf.concat(tf.split(K, self.num_heads, axis=2), axis=0)
+            V_ = tf.concat(tf.split(V, self.num_heads, axis=2), axis=0)
+            outputs = tf.matmul(Q_, tf.transpose(K_, [0, 2, 1]))
+            outputs = outputs / (K_.get_shape().as_list()[-1] ** 0.5)
+            key_masks = tf.sign(tf.abs(tf.reduce_sum(keys, axis=-1)))
+            key_masks = tf.tile(key_masks, [self.num_heads, 1])
+            key_masks = tf.tile(tf.expand_dims(key_masks, 1), [1, tf.shape(keys)[1], 1])
+            paddings = tf.ones_like(outputs) * (-2 ** 32 + 1)
+            outputs = tf.where(tf.equal(key_masks, 0), paddings, outputs)
+            outputs = tf.nn.softmax(outputs)
+            query_masks = tf.sign(tf.abs(tf.reduce_sum(keys, axis=-1)))
+            query_masks = tf.tile(query_masks, [self.num_heads, 1])
+            query_masks = tf.tile(tf.expand_dims(query_masks, -1), [1, 1, tf.shape(keys)[1]])
+            outputs *= query_masks
+            if self.parameter["mode"] == "train":
+                outputs = tf.nn.dropout(outputs, keep_prob=self.dropout_rate)
+            outputs = tf.matmul(outputs, V_)
+            outputs = tf.concat(tf.split(outputs, self.num_heads, axis=0), axis=2)
+            outputs += keys
+            outputs = self.normalize(outputs)
+        return outputs
 
 
 if __name__ == "__main__":
