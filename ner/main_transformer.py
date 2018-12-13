@@ -29,7 +29,8 @@ def iteration_model(model, dataset, parameter, train=True):
                       model.character_len : char_len,
                       model.label : label,
                       model.dropout_rate : parameter["keep_prob"] if train else 1.0,
-                      model.learning_rate : parameter["learning_rate"]
+                      model.learning_rate : parameter["learning_rate"],
+                      model.dec_input : np.eye(parameter["n_class"])[label]
                     }
         
         if train:
@@ -118,8 +119,8 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=1000 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=10 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=500 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 
@@ -200,9 +201,9 @@ if __name__ == '__main__':
                 f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
                 if f1Max < f1Measure:
                     f1Max, epMax = f1Measure, epoch
-                print('-----------------------------------------------------------------------------')
+                print('---------------------------------------------------------------------------')
                 print('Rate: {:.2f}  Epoch: {:>3} / {:>3}  \nF1: {:.5f} / {:.5f}  Precision: {:.5f} Recall: {:.5f}'.format(parameter["learning_rate"], epoch, epMax, f1Measure, f1Max, precision, recall))
-                print('-----------------------------------------------------------------------------')
+                print('---------------------------------------------------------------------------')
                 nsml.report(summary=True, scope=locals(), train__loss=avg_cost, step=epoch)
                 nsml.save(epoch)
             

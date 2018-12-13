@@ -36,11 +36,16 @@ class Model:
         embedding_morph = embed(tf.reshape(self.morph, [-1]))
         embedding_morph = tf.reshape(embedding_morph, [shape[0], shape[1], self.parameter["word_embedding_size"]])
         # CNN
-        # for _ in range(0, 3):
-        #     embedding_morph = tf.nn.conv1d(embedding_morph, tf.zeros([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]), stride=1, padding="SAME")
-        #     # embedding_morph = tf.layers.conv1d(embedding_morph, self.parameter['word_embedding_size'], 3, padding='SAME', kernel_initializer=tf.contrib.layers.xavier_initializer())
-        #     # embedding_morph = tf.layers.batch_normalization(embedding_morph, training=tf.less(self.dropout_rate, 1.0))
-        #     embedding_morph = tf.nn.relu(embedding_morph)
+        for _ in range(0, 3):
+            W = tf.zeros([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]])
+            # initializer = tf.contrib.layers.xavier_initializer()
+            # W = tf.Variable(initializer([3, self.parameter["word_embedding_size"], self.parameter["word_embedding_size"]]))
+            # b = tf.Variable(initializer([self.parameter["word_embedding_size"]]))
+            embedding_morph = tf.nn.conv1d(embedding_morph, W, stride=1, padding="SAME")
+            # embedding_morph = tf.layers.conv1d(embedding_morph, self.parameter['word_embedding_size'], 3, padding='SAME', kernel_initializer=tf.contrib.layers.xavier_initializer())
+            # embedding_morph = tf.layers.batch_normalization(embedding_morph, training=tf.less(self.dropout_rate, 1.0))
+            # embedding_morph = tf.nn.bias_add(embedding_morph, b)
+            embedding_morph = tf.nn.relu(embedding_morph)
         self._embeddings.append(embedding_morph)
 
         shape = tf.shape(self.character)
@@ -125,7 +130,7 @@ class Model:
             else:
                 (output_fw, output_bw), _ = _output
                 outputs = tf.concat([output_fw, output_bw], axis=2)
-                outputs = self.self_attention(outputs)
+                # outputs = self.self_attention(outputs)
                 outputs = tf.reshape(outputs, shape=[-1, 2 * lstm_units])
 
             W, b = self._build_weight([2 * self.parameter["lstm_units"], self.parameter["n_class"]], scope="output" + scope)

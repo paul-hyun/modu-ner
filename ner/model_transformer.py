@@ -19,29 +19,60 @@ class Model:
             self._embedding_matrix.append(self._build_embedding(item[1], item[2], name="embedding_" + item[0]))
 
         # 각각의 임베딩 값을 가져온다
-        self._embeddings = []
-        self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode) # shape (batch, 180, 16)
+        # self._embeddings = []
+        # embedding = tf.concat([tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode,
+        #                     #    self.character,
+        #                        self.ne_dict], axis=2)
+        # self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode) # shape (batch, 180, 16)
         # self._embeddings.append(tf.nn.embedding_lookup(self._embedding_matrix[1], self.character)) # shape (batch, 180, 8, 16)
+        # length = 31
+        # 
 
-        encoder_outputs = self.encoder(self._embeddings[0], self.parameter['word_embedding_size'], self.parameter['word_embedding_size'], self.parameter['word_embedding_size'], 3)
-        decoder_outputs = self.decoder(self.ne_dict, encoder_outputs, 15, 15, 15, 3)
+        ## encoder를 이용한 학습 word
+        # enc_input = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode
+        # length = 16
+        ## encoder를 이용한 학습 word + ne_dic
+        enc_input = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode
+        ne_dict = tf.argmax(self.ne_dict, axis=2)
+        ne_dict = tf.cast(ne_dict, tf.float32)
+        ne_dict = tf.reshape(ne_dict, [-1, 180, 1])
+        enc_input = tf.concat([enc_input, ne_dict], axis=2)
+        length = 17
+        crf_input = self.encoder(enc_input, length, length, length, 1)
+
+
+        ## decoder를 이용한 학습
+        # dec_input = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode
+        # encoder_outputs = self.ne_dict
+        # length = 16
+        # crf_input = self.decoder(dec_input, encoder_outputs, length, length, length, 3)
 
         # 단어 수 만큼 차원을 변환
-        logits = tf.keras.layers.Dense(15)(decoder_outputs)
-        # 예측 시퀀스를 내놓음
-        self.predict = tf.argmax(logits, 2)
+        sentence_output = tf.keras.layers.Dense(self.parameter["n_class"])(crf_input)
+        sentence_output = tf.reshape(sentence_output, [-1, self.parameter["n_class"]])
 
-        labels = tf.one_hot(self.label, 15)
-        self.cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=labels))
-        # accuracy = tf.metrics.accuracy(labels=self.label, predictions=predict, name='accOp')
+        # 마지막으로 CRF 를 실시 한다
+        crf_cost, crf_weight, crf_bias = self._build_crf_layer(sentence_output) # shape (), (30, 30), (30,)
 
-        self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost, global_step=self.global_step)
+        self.train_op = self._build_output_layer(crf_cost)
+        self.cost = crf_cost # shape ()
+
+        # 원래코드로 사용하지 않음
+        # self.trace = logits
+        # # 예측 시퀀스를 내놓음
+        # self.predict = tf.argmax(logits, 2)
+
+        # labels = tf.one_hot(self.label, self.parameter["n_class"])
+        # self.cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=labels))
+        # # accuracy = tf.metrics.accuracy(labels=self.label, predictions=predict, name='accOp')
+
+        # self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.cost, global_step=self.global_step)
 
     """ placeholder 생성 """
     def _build_placeholder(self):
         self.morph = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
-        self.ne_dict = tf.placeholder(tf.float32, [None, int(self.parameter["sentence_length"]), int(self.parameter["n_class"] / 2)]) # shape (batch, 180, 15)
-        self.character = tf.placeholder(tf.int32, [None, None, None]) # shape (batch, 180, 8)
+        self.ne_dict = tf.placeholder(tf.float32, [None, 180, 15]) # shape (batch, 180, 15)
+        self.character = tf.placeholder(tf.float32, [None, None, 8]) # shape (batch, 180, 8)
         self.dropout_rate = tf.placeholder(tf.float32)
         self.sequence = tf.placeholder(tf.int32, [None]) # shape (batch,)
         self.character_len = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
@@ -57,6 +88,31 @@ class Model:
         )
         return embedding_weights
     
+    def _build_weight(self, shape, scope="weight"):
+        with tf.variable_scope(scope):
+            W = tf.get_variable(name="W", shape=[shape[0], shape[1]], dtype=tf.float32, initializer = tf.contrib.layers.xavier_initializer())
+            b = tf.get_variable(name="b", shape=[shape[1]], dtype=tf.float32, initializer = tf.zeros_initializer())
+        return W, b
+    
+    def _build_crf_layer(self, target):
+        with tf.variable_scope("crf_layer"):
+            W, B = self._build_weight([self.parameter["n_class"], self.parameter["n_class"]], scope="weight_bias")
+            matricized_unary_scores = tf.matmul(target, W) + B
+            matricized_unary_scores = tf.reshape(matricized_unary_scores, [-1, self.parameter["sentence_length"], self.parameter["n_class"]])
+    
+            self.matricized_unary_scores = matricized_unary_scores
+            self.log_likelihood, self.transition_params = tf.contrib.crf.crf_log_likelihood(self.matricized_unary_scores, self.label, self.sequence)
+            cost = tf.reduce_mean(-self.log_likelihood)
+
+            self.viterbi_sequence, viterbi_score = tf.contrib.crf.crf_decode(matricized_unary_scores, self.transition_params, self.sequence)
+
+        return cost, W, B
+
+    def _build_output_layer(self, cost):
+        with tf.variable_scope("output_layer"):
+            train_op = tf.train.AdamOptimizer(self.parameter["learning_rate"]).minimize(cost, global_step=self.global_step)
+        return train_op
+
     """ 내적연산 Attention with Mask """
     def scaled_dot_product_attention(self, query, key, value, masked=False):
         key_seq_length = float(key.get_shape().as_list()[-2])
@@ -107,7 +163,7 @@ class Model:
         return outputs
 
     """ sublayer_connection이라 """
-    def sublayer_connection(self, inputs, sublayer, dropout=0.2):
+    def sublayer_connection(self, inputs, sublayer, dropout=0.5):
         outputs = self.layer_norm(inputs + tf.keras.layers.Dropout(dropout)(sublayer))
         return outputs
 

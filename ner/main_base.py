@@ -207,9 +207,9 @@ if __name__ == '__main__':
                 f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
                 if f1Max < f1Measure:
                     f1Max, epMax = f1Measure, epoch
-                print('-----------------------------------------------------------------------------')
+                print('---------------------------------------------------------------------------')
                 print('Rate: {:.2f}  Epoch: {:>3} / {:>3}  \nF1: {:.5f} / {:.5f}  Precision: {:.5f} Recall: {:.5f}'.format(parameter["learning_rate"], epoch, epMax, f1Measure, f1Max, precision, recall))
-                print('-----------------------------------------------------------------------------')
+                print('---------------------------------------------------------------------------')
                 nsml.report(summary=True, scope=locals(), train__loss=avg_cost, step=epoch)
                 nsml.save(epoch)
             
