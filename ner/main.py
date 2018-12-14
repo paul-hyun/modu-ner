@@ -77,12 +77,13 @@ def bind_model(sess):
         pred = []
 
         # 학습용 데이터셋 구성
+        dataset.parameter["batch_size"] = 100
         dataset.parameter["train_lines"] = len(input)
         dataset.make_input_data(input)
         reverse_tag = {v: k for k, v in dataset.necessary_data["ner_tag"].items()}
 
         # 테스트 셋을 측정한다.
-        for morph, ne_dict, character, seq_len, char_len, _, step in dataset.get_data_batch_size(len(input), False):
+        for morph, ne_dict, character, seq_len, char_len, _, step in dataset.get_data_batch_size(100, False):
             feed_dict = { model.morph : morph,
                           model.ne_dict : ne_dict,
                           model.character : character,
@@ -120,8 +121,8 @@ if __name__ == '__main__':
     parser.add_argument('--necessary_file', type=str, default="necessary.pkl")
     parser.add_argument('--train_lines', type=int, default=50, required=False, help='Maximum train lines')
 
-    parser.add_argument('--epochs', type=int, default=10 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
-    parser.add_argument('--batch_size', type=int, default=500 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=5 if nsml.HAS_DATASET else 10, required=False, help='Epoch value')
+    parser.add_argument('--batch_size', type=int, default=100 if nsml.HAS_DATASET else 10, required=False, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.02, required=False, help='Set learning rate')
     parser.add_argument('--keep_prob', type=float, default=0.65, required=False, help='Dropout_rate')
 
@@ -132,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--lstm_units', type=int, default=16, required=False, help='Hidden unit size')
     parser.add_argument('--char_lstm_units', type=int, default=32, required=False, help='Hidden unit size for Char rnn')
     parser.add_argument('--sentence_length', type=int, default=180, required=False, help='Maximum words in sentence')
-    parser.add_argument('--word_length', type=int, default=8, required=False, help='Maximum chars in word')
+    parser.add_argument('--word_length', type=int, default=16, required=False, help='Maximum chars in word')
 
     try:
         parameter = vars(parser.parse_args())
@@ -183,13 +184,16 @@ if __name__ == '__main__':
                 index_test.append(index)
             else:
                 index_train.append(index)
-        dataset.make_input_data([extern_data[i] for i in index_train])
-        testset.make_input_data([extern_data[i] for i in index_test])
 
         f1Max = 0.0
         epMax = 0
         parameter["learning_rate"] = 0.05
         for epoch in range(parameter["epochs"]):
+            np.random.shuffle(index_train)
+            dataset.make_input_data([extern_data[i] for i in index_train])
+            np.random.shuffle(index_test)
+            testset.make_input_data([extern_data[i] for i in index_test])
+
             avg_cost, avg_correct, precision_count, recall_count = iteration_model(model, dataset, parameter)
             print('[Epoch: {:>4}] cost = {:>.6} Accuracy = {:>.6}'.format(epoch, avg_cost, avg_correct))
             f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
@@ -202,9 +206,9 @@ if __name__ == '__main__':
                 f1Measure, precision, recall = calculation_measure(precision_count, recall_count)
                 if f1Max < f1Measure:
                     f1Max, epMax = f1Measure, epoch
-                print('---------------------------------------------------------------------------')
+                print('--------------------------------------------------------------------------')
                 print('Rate: {:.2f}  Epoch: {:>3} / {:>3}  \nF1: {:.5f} / {:.5f}  Precision: {:.5f} Recall: {:.5f}'.format(parameter["learning_rate"], epoch, epMax, f1Measure, f1Max, precision, recall))
-                print('---------------------------------------------------------------------------')
+                print('--------------------------------------------------------------------------')
                 nsml.report(summary=True, scope=locals(), train__loss=avg_cost, step=epoch)
                 nsml.save(epoch)
             

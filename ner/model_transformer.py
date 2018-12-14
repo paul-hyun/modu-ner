@@ -33,12 +33,14 @@ class Model:
         # length = 16
         ## encoder를 이용한 학습 word + ne_dic
         enc_input = tf.nn.embedding_lookup(self._embedding_matrix[0], self.morph) + position_encode
-        ne_dict = tf.argmax(self.ne_dict, axis=2)
-        ne_dict = tf.cast(ne_dict, tf.float32)
-        ne_dict = tf.reshape(ne_dict, [-1, 180, 1])
+        # enc_input = self.character + position_encode
+        # ne_dict = tf.argmax(self.ne_dict, axis=2)
+        # ne_dict = tf.cast(ne_dict, tf.float32)
+        # ne_dict = tf.reshape(ne_dict, [-1, 180, 1])
+        ne_dict = self.ne_dict
         enc_input = tf.concat([enc_input, ne_dict], axis=2)
-        length = 17
-        crf_input = self.encoder(enc_input, length, length, length, 1)
+        length = 31
+        crf_input = self.encoder(enc_input, length, length, length, 4)
 
 
         ## decoder를 이용한 학습
@@ -72,7 +74,7 @@ class Model:
     def _build_placeholder(self):
         self.morph = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
         self.ne_dict = tf.placeholder(tf.float32, [None, 180, 15]) # shape (batch, 180, 15)
-        self.character = tf.placeholder(tf.float32, [None, None, 8]) # shape (batch, 180, 8)
+        self.character = tf.placeholder(tf.float32, [None, None, 16]) # shape (batch, 180, 8)
         self.dropout_rate = tf.placeholder(tf.float32)
         self.sequence = tf.placeholder(tf.int32, [None]) # shape (batch,)
         self.character_len = tf.placeholder(tf.int32, [None, None]) # shape (batch, 180)
